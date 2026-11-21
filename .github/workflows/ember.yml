@@ -1,0 +1,114 @@
+# Builds, tests and renders the (private) ember engine on every OS and CPU family GitHub
+# offers. Started by hand only; the engine is checked out with a read-only deploy key.
+name: ember
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: ember branch, tag or commit
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ember-${{ inputs.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-24.04 }
+          - { name: linux-arm64, os: ubuntu-24.04-arm }
+          - { name: windows-x86_64, os: windows-2025 }
+          - { name: windows-arm64, os: windows-11-arm }
+          - { name: macos-arm64, os: macos-15 }
+          - { name: macos-x86_64, os: macos-15-intel }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ci
+
+      - uses: actions/checkout@v4
+        with:
+          repository: TheNetherWatcher/ember
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.EMBER_DEPLOY_KEY }}
+          path: ember
+          persist-credentials: false
+
+      - name: Software GPU (Linux, Mesa lavapipe)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mesa-vulkan-drivers libvulkan1 > /dev/null
+
+      - name: Toolchain
+        working-directory: ember
+        # rust-toolchain.toml pins the version; rustup installs it on first use.
+        run: rustup show active-toolchain && rustc -vV
+
+      - name: Size and lint gate
+        working-directory: ember
+        run: ./scripts/check.sh
+
+      - name: Tests
+        working-directory: ember
+        run: cargo test --release --workspace
+
+      - name: Build
+        working-directory: ember
+        run: cargo build --release
+
+      - name: Physics (CPU only, no GPU)
+        working-directory: ember
+        run: EMBER_PHYSICS_BENCH=1000 ./target/release/ember | tee ../physics.txt
+
+      - name: Test scenes
+        working-directory: ember
+        run: ./assets/fetch.sh > /dev/null
+
+      - name: Render headless
+        id: render
+        working-directory: ember
+        # Windows runners have no GPU: WARP, Direct3D 12's software rasteriser. Linux: lavapipe.
+        # macOS runners are virtual machines; Metal may be missing, so failures there don't fail the job.
+        continue-on-error: ${{ runner.os == 'macOS' }}
+        run: |
+          case "$RUNNER_OS" in
+            Windows) export WGPU_BACKEND=dx12 EMBER_SOFTWARE=1 ;;
+            Linux) export WGPU_BACKEND=vulkan ;;
+          esac
+          ../ci/scripts/shots.sh ./target/release/ember ../shots
+
+      - name: Compare with reference
+        if: always() && steps.render.outcome != 'skipped'
+        continue-on-error: true
+        run: $(command -v python3 || command -v python) ci/scripts/compare.py check shots ci/reference out
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots-${{ matrix.name }}
+          path: |
+            out/*.png
+            out/results.json
+            shots/*.log
+            physics.txt
+          retention-days: 14
