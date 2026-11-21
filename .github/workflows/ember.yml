@@ -35,7 +35,6 @@ jobs:
           - { name: windows-x86_64, os: windows-2025 }
           - { name: windows-arm64, os: windows-11-arm }
           - { name: macos-arm64, os: macos-15 }
-          - { name: macos-x86_64, os: macos-15-intel }
     defaults:
       run:
         shell: bash
@@ -109,7 +108,6 @@ jobs:
         # References come from an M4's GPU. Software rasterisers (lavapipe, WARP) antialias edges
         # differently: on the sphere grid ~2.7% of pixels, all on outlines. Pictures are right.
         run: |
-          # Intel macOS's virtual GPU lacks subgroups and ASTC, so it takes other paths too.
           limit=5; [ "$RUNNER_OS" = macOS ] && [ "$RUNNER_ARCH" = ARM64 ] && limit=2
           $(command -v python3 || command -v python) ci/scripts/compare.py check shots ci/reference out --max-bad $limit
 
