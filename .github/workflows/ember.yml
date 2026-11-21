@@ -108,7 +108,11 @@ jobs:
       - name: Compare with reference
         if: always() && steps.render.outcome != 'skipped'
         continue-on-error: true
-        run: $(command -v python3 || command -v python) ci/scripts/compare.py check shots ci/reference out
+        # References come from an M4's GPU. Software rasterisers (lavapipe, WARP) antialias edges
+        # differently: on the sphere grid ~2.7% of pixels, all on outlines. Pictures are right.
+        run: |
+          limit=2; [ "$RUNNER_OS" != macOS ] && limit=5
+          $(command -v python3 || command -v python) ci/scripts/compare.py check shots ci/reference out --max-bad $limit
 
       - name: Upload screenshots
         if: always()
