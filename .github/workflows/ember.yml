@@ -40,17 +40,26 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: ci
 
-      - uses: actions/checkout@v4
-        with:
-          repository: TheNetherWatcher/ember
-          ref: ${{ inputs.ref }}
-          ssh-key: ${{ secrets.EMBER_DEPLOY_KEY }}
-          path: ember
-          persist-credentials: false
+      # A plain fetch rather than actions/checkout: on windows-11-arm, Windows' OpenSSH rejects
+      # the key file checkout writes ("permissions too open"). GitHub's host key is pinned.
+      - name: Fetch ember (read-only deploy key)
+        env:
+          KEY: ${{ secrets.EMBER_DEPLOY_KEY }}
+          REF: ${{ inputs.ref }}
+        run: |
+          key="$RUNNER_TEMP/ember_key"; hosts="$RUNNER_TEMP/known_hosts"
+          printf '%s\n' "$KEY" > "$key" && chmod 600 "$key"
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$hosts"
+          export GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$hosts'"
+          git init -q ember
+          git -C ember fetch -q --depth 1 git@github.com:TheNetherWatcher/ember.git "$REF"
+          git -C ember checkout -q FETCH_HEAD
+          rm -f "$key"
+          git -C ember log -1 --format='ember %h %s'
 
       - name: Software GPU (Linux, Mesa lavapipe)
         if: runner.os == 'Linux'
