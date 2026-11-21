@@ -52,14 +52,14 @@ jobs:
           REF: ${{ inputs.ref }}
         run: |
           key="$RUNNER_TEMP/ember_key"; hosts="$RUNNER_TEMP/known_hosts"
+          trap 'rm -f "$key"' EXIT
           printf '%s\n' "$KEY" > "$key" && chmod 600 "$key"
           echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$hosts"
           export GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$hosts'"
           git init -q ember
           git -C ember fetch -q --depth 1 git@github.com:TheNetherWatcher/ember.git "$REF"
           git -C ember checkout -q FETCH_HEAD
-          rm -f "$key"
-          git -C ember log -1 --format='ember %h %s'
+          git -C ember log -1 --format='ember %h'
 
       - name: Software GPU (Linux, Mesa lavapipe)
         if: runner.os == 'Linux'
@@ -74,15 +74,16 @@ jobs:
 
       - name: Size and lint gate
         working-directory: ember
-        run: ./scripts/check.sh
+        # Errors one line each, so the public log carries no source excerpts.
+        run: CLIPPY_SHORT=1 ./scripts/check.sh
 
       - name: Tests
         working-directory: ember
-        run: cargo test --release --workspace
+        run: cargo test --release --workspace --message-format=short
 
       - name: Build
         working-directory: ember
-        run: cargo build --release
+        run: cargo build --release --message-format=short
 
       - name: Physics (CPU only, no GPU)
         working-directory: ember
