@@ -96,8 +96,6 @@ jobs:
         id: render
         working-directory: ember
         # Windows runners have no GPU: WARP, Direct3D 12's software rasteriser. Linux: lavapipe.
-        # macOS runners are virtual machines; Metal may be missing, so failures there don't fail the job.
-        continue-on-error: ${{ runner.os == 'macOS' }}
         run: |
           case "$RUNNER_OS" in
             Windows) export WGPU_BACKEND=dx12 EMBER_SOFTWARE=1 ;;
@@ -107,7 +105,6 @@ jobs:
 
       - name: Compare with reference
         if: always() && steps.render.outcome != 'skipped'
-        continue-on-error: true
         # References come from an M4's GPU. Software rasterisers (lavapipe, WARP) antialias edges
         # differently: on the sphere grid ~2.7% of pixels, all on outlines. Pictures are right.
         run: |

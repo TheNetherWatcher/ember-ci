@@ -54,7 +54,8 @@ def check(shots, refs, out, max_bad, max_mean):
         write_png(os.path.join(out, name + ".png"), w, h, a)
         ref = os.path.join(refs, name + ".png")
         if not os.path.exists(ref):
-            rows.append({"scene": name, "status": "no reference"})
+            rows.append({"scene": name, "status": "FAIL: no reference"})
+            ok = False
             continue
         rw, rh, b = read_png(ref)
         if (rw, rh) != (w, h):
@@ -73,6 +74,11 @@ def check(shots, refs, out, max_bad, max_mean):
         passed = bad <= max_bad and mean <= max_mean
         ok &= passed
         rows.append({"scene": name, "status": "pass" if passed else "FAIL", "bad_pct": round(bad, 3), "mean": round(mean, 3)})
+    # A reference with no screenshot means that scene didn't render.
+    shot = {r["scene"] for r in rows}
+    for name in sorted(f[:-4] for f in os.listdir(refs) if f.endswith(".png") and f[:-4] not in shot):
+        rows.append({"scene": name, "status": "FAIL: not rendered"})
+        ok = False
     table = "| scene | result | bad pixels % | mean diff |\n|---|---|---|---|\n" + "".join(
         f"| {r['scene']} | {r['status']} | {r.get('bad_pct', '')} | {r.get('mean', '')} |\n" for r in rows)
     print(table)
